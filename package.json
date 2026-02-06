@@ -1,0 +1,29 @@
+{
+  "name": "tic-tac-two",
+  "version": "0.1.0",
+  "description": "A terminal-based Tic-Tac-Toe experience powered by TypeScript and minimax AI.",
+  "main": "dist/cli.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "play": "node dist/cli.js",
+    "start": "npm run build && npm run play",
+    "test": "npm run build && node --test tests/*.test.js",
+    "coverage": "c8 --reporter=text --reporter=html npm run test",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "tic-tac-toe",
+    "tui",
+    "cli",
+    "typescript",
+    "minimax"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "typescript": "^5.5.2",
+    "c8": "^8.0.0"
+  }
+}
