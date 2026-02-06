@@ -263,7 +263,7 @@ test("minimax prefers finishing a winning line", () => {
   const baseIndex = state.activeY * 5 + state.activeX;
   state = applyAction(state, { type: "place", index: baseIndex }, "X");
   state = applyAction(state, { type: "place", index: baseIndex + 1 }, "X");
-  const action = chooseBestAction(state, "X", 6);
+  const action = chooseBestAction(state, "X", new Set(), 6);
   assert.strictEqual(action.type, "place");
   assert.strictEqual(action.index, baseIndex + 2);
 });
@@ -289,7 +289,7 @@ test("minimax chooses a shift when the active grid is full", () => {
     0,
     "No placements should remain once the active grid is filled"
   );
-  const chosen = chooseBestAction(fullState, "X", 6);
+  const chosen = chooseBestAction(fullState, "X", new Set(), 6);
   assert.strictEqual(chosen.type, "shift");
   assert.ok(chosen.dx !== 0 || chosen.dy !== 0, "Shift must move the grid");
 });
@@ -316,7 +316,7 @@ test("minimax returns the winning principal variation", () => {
   const activeIndices = getActiveIndices(state);
   state = applyAction(state, { type: "place", index: activeIndices[0] }, "X");
   state = applyAction(state, { type: "place", index: activeIndices[1] }, "X");
-  const result = minimax(state, "X", "X", 0, 4, new Set());
+  const result = minimax(state, "X", "X", 0, 4, new Set(), new Set());
   assert.ok(result.pv.length > 0, "Principal variation should include at least one action");
   assert.strictEqual(result.pv[0].type, "place");
   assert.strictEqual(result.pv[0].index, activeIndices[2]);
@@ -324,7 +324,7 @@ test("minimax returns the winning principal variation", () => {
 });
 
 test("engine evaluation reports multiple PVs sorted by score", () => {
-  const evaluations = getEngineEvaluations(createInitialState(), "X", 3, 3);
+  const { evaluations } = getEngineEvaluations(createInitialState(), "X", new Set(), 3, 3);
   assert.ok(evaluations.length > 0, "Expect at least one evaluation entry");
   assert.ok(evaluations.every((entry) => entry.pv.length >= 1), "Each report should include at least the root action");
   assert.ok(evaluations.every((entry) => entry.pv[0] === entry.action), "Each PV should begin with the candidate action");

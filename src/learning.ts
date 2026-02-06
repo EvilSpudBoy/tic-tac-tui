@@ -6,6 +6,7 @@ import {
   getOpponent,
   getWinner,
   GameState,
+  getStateKey,
   isDraw,
   Player
 } from "./game";
@@ -40,17 +41,26 @@ export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpiso
   let currentPlayer: Player = FIRST_PLAYER;
   const history: SelfPlayTurn[] = [];
 
-  for (let turn = 0; turn < maxTurns; turn += 1) {
-    const winner = getWinner(state);
-    if (winner || isDraw(state)) {
-      return { winner, turnCount: turn, history };
-    }
+    // We need to keep a set of state keys for the AI to check against
+    // However, 'history' here is an array of objects. We should construct the Set<string> of keys.
+    // Ideally we maintain a separate Set for efficient lookup.
+    const historySet = new Set<string>();
+    // Pre-populate with initial state? The rules usually say "repeat ANY previous state".
+    // So yes, we should add initial state.
+    historySet.add(getStateKey(state, currentPlayer));
 
-    const action = chooseBestAction(state, currentPlayer, depthLimit, evaluationPlugin.evaluate);
-    history.push({ stateBefore: state, player: currentPlayer, action });
-    state = applyAction(state, action, currentPlayer);
-    currentPlayer = getOpponent(currentPlayer);
-  }
+    for (let turn = 0; turn < maxTurns; turn += 1) {
+      const winner = getWinner(state);
+      if (winner || isDraw(state)) {
+        return { winner, turnCount: turn, history };
+      }
+
+      const action = chooseBestAction(state, currentPlayer, historySet, depthLimit, evaluationPlugin.evaluate);
+      history.push({ stateBefore: state, player: currentPlayer, action });
+      state = applyAction(state, action, currentPlayer);
+      currentPlayer = getOpponent(currentPlayer);
+      historySet.add(getStateKey(state, currentPlayer));
+    }
 
   const finalWinner = getWinner(state);
   const draw = isDraw(state);

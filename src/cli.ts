@@ -185,16 +185,18 @@ const renderStatus = (state: GameState, current: Player, humanPlayer: Player): v
 const renderEngineEvaluation = (
   state: GameState,
   player: Player,
+  history: Set<string>,
   label: string
 ): void => {
   if (multiPvCount <= 0) {
     return;
   }
-  const evaluations = getEngineEvaluations(state, player, engineDepth, multiPvCount);
+  const { evaluations, stats } = getEngineEvaluations(state, player, history, engineDepth, multiPvCount);
   if (!evaluations.length) {
     return;
   }
   console.log(`\n${label} engine evaluation (depth ${engineDepth}):`);
+  console.log(`Nodes visited: ${stats.nodesVisited}`);
   evaluations.forEach((entry, index) => {
     const scoreText = entry.score >= 0 ? `+${entry.score}` : `${entry.score}`;
     console.log(`  ${index + 1}. score ${scoreText} | PV: ${formatPrincipalVariation(entry.pv)}`);
@@ -276,11 +278,12 @@ const promptForPlayerChoice = async (): Promise<Player | "SELF_PLAY"> => {
 
 const executeAiTurn = (
   state: GameState,
-  player: Player
+  player: Player,
+  history: Set<string>
 ): GameState => {
-  renderEngineEvaluation(state, player, "AI");
+  renderEngineEvaluation(state, player, history, "AI");
   console.log("\nAI is thinking...");
-  const aiAction = chooseBestAction(state, player, engineDepth);
+  const aiAction = chooseBestAction(state, player, history, engineDepth);
   const nextState = applyAction(state, aiAction, player);
   recordMove(player, aiAction);
   return nextState;
@@ -303,7 +306,7 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
     if (currentPlayer === humanPlayer) {
       const { action, handoffToAi } = await handleHumanMove(state, humanPlayer, seenStates);
       if (handoffToAi) {
-        const nextState = executeAiTurn(state, currentPlayer);
+        const nextState = executeAiTurn(state, currentPlayer, seenStates);
         const nextPlayer = getOpponent(currentPlayer);
         state = nextState;
         currentPlayer = nextPlayer;
@@ -318,7 +321,7 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
       currentPlayer = action.nextPlayer;
       addStateToHistory(seenStates, state, currentPlayer);
     } else {
-      const nextState = executeAiTurn(state, currentPlayer);
+      const nextState = executeAiTurn(state, currentPlayer, seenStates);
       const nextPlayer = getOpponent(currentPlayer);
       state = nextState;
       currentPlayer = nextPlayer;
@@ -365,16 +368,17 @@ const playSelfMatch = async (): Promise<void> => {
     console.log("Self-play mode (AI vs AI)\n");
     console.log(renderBoard(state));
     console.log(describeActiveGrid(state));
-    console.log(`Next to move: ${currentPlayer}`);
+    renderMoveHistory();
+    console.log(`\nNext to move: ${currentPlayer}`);
 
     const winner = getWinner(state);
     if (winner || isDraw(state)) {
       break;
     }
 
-    renderEngineEvaluation(state, currentPlayer, `Player ${currentPlayer}`);
+    renderEngineEvaluation(state, currentPlayer, seenStates, `Player ${currentPlayer}`);
     console.log("\nAI selecting move...");
-    const aiAction = chooseBestAction(state, currentPlayer, engineDepth);
+    const aiAction = chooseBestAction(state, currentPlayer, seenStates, engineDepth);
     console.log(`${currentPlayer} executes ${describeAction(aiAction)}\n`);
     state = applyAction(state, aiAction, currentPlayer);
     recordMove(currentPlayer, aiAction);

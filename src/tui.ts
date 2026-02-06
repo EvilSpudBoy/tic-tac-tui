@@ -3,11 +3,23 @@ import { GameState, isCellInActiveGrid } from "./game";
 const rowLabels = ["A", "B", "C", "D", "E"];
 const columnLabels = ["1", "2", "3", "4", "5"];
 
-const toCellChar = (cell: string): string => (cell === " " ? "·" : cell);
+const RESET = "\x1b[0m";
+const DIM = "\x1b[2m";
+const BOLD = "\x1b[1m";
+const RED = "\x1b[31m";
+const CYAN = "\x1b[36m";
+const BG_GRAY = "\x1b[47m"; // White-ish background for active grid? Or maybe just brighter.
+const YELLO_BG = "\x1b[43m";
+
+const toCellChar = (cell: string): string => {
+  if (cell === "X") return `${RED}X${RESET}`;
+  if (cell === "O") return `${CYAN}O${RESET}`;
+  return `${DIM}·${RESET}`;
+};
 
 const buildHeader = (): string => {
-  const columns = columnLabels.map((label) => ` ${label}  `).join("");
-  return `    ${columns.trimEnd()}`;
+  const columns = columnLabels.map((label) => ` ${label} `).join("");
+  return `  ${columns.trimEnd()}`;
 };
 
 export const renderBoard = (state: GameState): string => {
@@ -16,8 +28,14 @@ export const renderBoard = (state: GameState): string => {
       .map((_, columnIndex) => {
         const index = rowIndex * columnLabels.length + columnIndex;
         const char = toCellChar(state.board[index]);
-        const cellText = isCellInActiveGrid(state, rowIndex, columnIndex) ? `[${char}]` : ` ${char} `;
-        return `${cellText} `;
+        // Highlight active grid with bold brackets or background
+        const isActive = isCellInActiveGrid(state, rowIndex, columnIndex);
+        
+        // Let's make active grid more visible.
+        const left = isActive ? `${BOLD}[` : " ";
+        const right = isActive ? `]${RESET}` : " ";
+        
+        return `${left}${char}${right}`;
       })
       .join("");
     return `${label} ${rowCells.trimEnd()}`;

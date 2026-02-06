@@ -1,6 +1,9 @@
-import { Action, applyAction, GameState, getAvailableActions, getOpponent, getStateKey, isDraw, getWinner } from "./game";
-import { Player } from "./game";
+import { Action, applyAction, GameState, getAvailableActions, getOpponent, getStateKey, isDraw, getWinner, Player } from "./game";
 import { DEFAULT_EVALUATION_PLUGIN, EvaluationFunction } from "./evaluation";
+
+export interface MinimaxStats {
+  nodesVisited: number;
+}
 
 export interface MinimaxResult {
   score: number;
@@ -20,8 +23,11 @@ export const minimax = (
   depth: number,
   maxDepth: number,
   visited: Set<string>,
+  history: Set<string>,
+  stats: MinimaxStats,
   evaluate: EvaluationFunction = defaultEvaluationFunction
 ): MinimaxResult => {
+  stats.nodesVisited++;
   const winner = getWinner(state);
   if (winner) {
     return { score: evaluateTerminal(winner, aiPlayer, depth, evaluate), pv: [] };
@@ -41,8 +47,18 @@ export const minimax = (
   }
 
   visited.add(key);
-  const actions = getAvailableActions(state, currentPlayer);
+  
+  // Filter actions that would lead to a state in history
+  const allActions = getAvailableActions(state, currentPlayer);
+  const actions = allActions.filter(action => {
+    const nextState = applyAction(state, action, currentPlayer);
+    const nextPlayer = getOpponent(currentPlayer);
+    const nextKey = getStateKey(nextState, nextPlayer);
+    return !history.has(nextKey);
+  });
+
   if (actions.length === 0) {
+    // Repetition or no moves
     visited.delete(key);
     return { score: evaluateTerminal(null, aiPlayer, depth, evaluate), pv: [] };
   }
@@ -55,7 +71,7 @@ export const minimax = (
 
     for (const action of actions) {
       const nextState = applyAction(state, action, currentPlayer);
-      const result = minimax(nextState, opponent, aiPlayer, depth + 1, maxDepth, visited, evaluate);
+      const result = minimax(nextState, opponent, aiPlayer, depth + 1, maxDepth, visited, history, stats, evaluate);
       if (result.score > bestScore) {
         bestScore = result.score;
         bestAction = action;
@@ -72,7 +88,7 @@ export const minimax = (
   let worstPV: Action[] = [];
   for (const action of actions) {
     const nextState = applyAction(state, action, currentPlayer);
-    const result = minimax(nextState, opponent, aiPlayer, depth + 1, maxDepth, visited, evaluate);
+    const result = minimax(nextState, opponent, aiPlayer, depth + 1, maxDepth, visited, history, stats, evaluate);
     if (result.score < worstScore) {
       worstScore = result.score;
       worstAction = action;
@@ -93,13 +109,22 @@ export interface EngineEvaluation {
 export const getEngineEvaluations = (
   state: GameState,
   aiPlayer: Player,
+  history: Set<string>,
   depthLimit = 6,
   count = 3,
   evaluate: EvaluationFunction = defaultEvaluationFunction
-): EngineEvaluation[] => {
-  const actions = getAvailableActions(state, aiPlayer);
+): { evaluations: EngineEvaluation[]; stats: MinimaxStats } => {
+  const stats: MinimaxStats = { nodesVisited: 0 };
+  const allActions = getAvailableActions(state, aiPlayer);
+  const actions = allActions.filter(action => {
+    const nextState = applyAction(state, action, aiPlayer);
+    const nextPlayer = getOpponent(aiPlayer);
+    const nextKey = getStateKey(nextState, nextPlayer);
+    return !history.has(nextKey);
+  });
+
   if (actions.length === 0) {
-    return [];
+    return { evaluations: [], stats };
   }
 
   const opponent = getOpponent(aiPlayer);
@@ -108,7 +133,13 @@ export const getEngineEvaluations = (
   const evaluations = actions.map((action) => {
     const nextState = applyAction(state, action, aiPlayer);
     const visited = new Set<string>([rootKey]);
-    const result = minimax(nextState, opponent, aiPlayer, 1, depthLimit, visited, evaluate);
+    // Note: We pass the *same* history down. 
+    // It is debatable if we should add the 'nextState' to history for deeper search?
+    // No, 'history' is what has ALREADY happened in the real game. 
+    // 'visited' handles the current search path recursion.
+    // However, if we make a move in the search, we shouldn't repeat THAT state later in the search either?
+    // 'visited' handles cycles in the search tree. 'history' handles repetition of previous game states.
+    const result = minimax(nextState, opponent, aiPlayer, 1, depthLimit, visited, history, stats, evaluate);
     return {
       score: result.score,
       action,
@@ -117,18 +148,26 @@ export const getEngineEvaluations = (
   });
 
   evaluations.sort((a, b) => b.score - a.score);
-  return count > 0 ? evaluations.slice(0, count) : evaluations;
+  return {
+    evaluations: count > 0 ? evaluations.slice(0, count) : evaluations,
+    stats
+  };
 };
 
 export const chooseBestAction = (
   state: GameState,
   aiPlayer: Player,
+  history: Set<string>,
   depthLimit = 6,
   evaluate: EvaluationFunction = defaultEvaluationFunction
 ): Action => {
-  const evaluations = getEngineEvaluations(state, aiPlayer, depthLimit, 1, evaluate);
+  const { evaluations } = getEngineEvaluations(state, aiPlayer, history, depthLimit, 1, evaluate);
   if (evaluations.length === 0) {
-    throw new Error("Minimax could not find a move");
+    // Fallback: If no moves allowed due to history (or just none), what do?
+    // We should probably throw or return null, but the signature says Action.
+    // If we are here, we truly have no moves or all are blocked by history.
+    // The previous implementation threw.
+    throw new Error("Minimax could not find a move (all moves likely repeat history)");
   }
-  return evaluations[0].action;
+  return evaluations[0].action!;
 };
