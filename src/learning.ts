@@ -10,7 +10,7 @@ import {
   isDraw,
   Player
 } from "./game";
-import { chooseBestAction } from "./minimax";
+import { chooseBestAction, RepetitionRule } from "./minimax";
 import { DEFAULT_EVALUATION_PLUGIN, EvaluationPlugin } from "./evaluation";
 
 export interface SelfPlayTurn {
@@ -32,6 +32,7 @@ export interface SelfPlayOptions {
   evaluationPluginX?: EvaluationPlugin;
   evaluationPluginO?: EvaluationPlugin;
   maxTurns?: number;
+  repetitionRule?: RepetitionRule;
 }
 
 export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpisodeResult => {
@@ -40,6 +41,7 @@ export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpiso
   const evalPluginO = options.evaluationPluginO ?? fallbackPlugin;
   const depthLimit = options.depthLimit ?? 6;
   const maxTurns = options.maxTurns ?? 200;
+  const repetitionRule = options.repetitionRule ?? "search";
 
   let state = createInitialState();
   let currentPlayer: Player = FIRST_PLAYER;
@@ -55,7 +57,7 @@ export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpiso
       }
 
       const evalPlugin = currentPlayer === "X" ? evalPluginX : evalPluginO;
-      const action = chooseBestAction(state, currentPlayer, historySet, depthLimit, evalPlugin.evaluate);
+      const action = chooseBestAction(state, currentPlayer, historySet, depthLimit, evalPlugin.evaluate, repetitionRule);
       history.push({ stateBefore: state, player: currentPlayer, action });
       state = applyAction(state, action, currentPlayer);
       currentPlayer = getOpponent(currentPlayer);
@@ -92,7 +94,8 @@ export const runSelfPlayTraining = (
     evaluationPlugin: options.evaluationPlugin,
     evaluationPluginX: options.evaluationPluginX,
     evaluationPluginO: options.evaluationPluginO,
-    maxTurns: options.maxTurns
+    maxTurns: options.maxTurns,
+    repetitionRule: options.repetitionRule
   };
 
   const results: SelfPlayEpisodeResult[] = [];

@@ -16,7 +16,7 @@ import {
   getWinner,
   isDraw
 } from "./game";
-import { chooseBestAction, getEngineEvaluations } from "./minimax";
+import { chooseBestAction, getEngineEvaluations, RepetitionRule } from "./minimax";
 import {
   clearScreen,
   renderBoard,
@@ -102,6 +102,14 @@ const parseStringArg = (flag: string): string | undefined => {
   return entry.split("=")[1];
 };
 
+const parseRepetitionRule = (): RepetitionRule => {
+  const raw = parseStringArg("--repetition-rule");
+  if (raw === "strict") return "strict";
+  return "search";
+};
+const repetitionRule = parseRepetitionRule();
+const isStrictRepetition = repetitionRule === "strict";
+
 const evalXPlugin = getEvaluationPlugin(parseStringArg("--eval-x") ?? parseStringArg("--eval"));
 const evalOPlugin = getEvaluationPlugin(parseStringArg("--eval-o") ?? parseStringArg("--eval"));
 
@@ -149,7 +157,7 @@ const buildActionMenu = (
     return {
       action,
       label: describeAction(action),
-      repeats: history.has(nextStateKey),
+      repeats: isStrictRepetition ? history.has(nextStateKey) : false,
       nextState,
       nextPlayer: opponent,
       nextStateKey
@@ -175,7 +183,15 @@ const computeEvalData = (
 ): EvalWidgetData | null => {
   if (multiPvCount <= 0) return null;
   const evalPlugin = player === "X" ? evalXPlugin : evalOPlugin;
-  const { evaluations, stats } = getEngineEvaluations(state, player, history, engineDepth, multiPvCount, evalPlugin.evaluate);
+  const { evaluations, stats } = getEngineEvaluations(
+    state,
+    player,
+    history,
+    engineDepth,
+    multiPvCount,
+    evalPlugin.evaluate,
+    repetitionRule
+  );
   if (!evaluations.length) return null;
   return {
     evaluations: evaluations.map((e) => ({
@@ -241,7 +257,15 @@ const renderProgressiveEval = async (
     // Yield to let the event loop process signals (e.g. Ctrl+C)
     await yieldToEventLoop();
 
-    const { evaluations, stats } = getEngineEvaluations(state, player, history, depth, multiPvCount, evalPlugin.evaluate);
+    const { evaluations, stats } = getEngineEvaluations(
+      state,
+      player,
+      history,
+      depth,
+      multiPvCount,
+      evalPlugin.evaluate,
+      repetitionRule
+    );
 
     const evalData: EvalWidgetData = {
       evaluations: evaluations.map((e) => ({
@@ -289,7 +313,7 @@ const selectMove = async (
     if (!entries.length) {
       console.log("\nNo legal moves available.");
     } else {
-      console.log("\nAll moves repeat previous positions.");
+      console.log(isStrictRepetition ? "\nAll moves repeat previous positions." : "\nNo legal moves available.");
     }
     const input = await prompt("Command (ai/restart/exit): ");
     const cmd = input.toLowerCase();
@@ -500,7 +524,7 @@ const executeAiTurn = async (
   await renderProgressiveEval(state, player, history);
 
   const evalPlugin = player === "X" ? evalXPlugin : evalOPlugin;
-  const aiAction = chooseBestAction(state, player, history, engineDepth, evalPlugin.evaluate);
+  const aiAction = chooseBestAction(state, player, history, engineDepth, evalPlugin.evaluate, repetitionRule);
   const nextState = applyAction(state, aiAction, player);
   recordMove(player, aiAction);
   return nextState;
@@ -593,7 +617,7 @@ const playSelfMatch = async (): Promise<void> => {
     await renderProgressiveEval(state, currentPlayer, seenStates);
 
     const evalPlugin = currentPlayer === "X" ? evalXPlugin : evalOPlugin;
-    const aiAction = chooseBestAction(state, currentPlayer, seenStates, engineDepth, evalPlugin.evaluate);
+    const aiAction = chooseBestAction(state, currentPlayer, seenStates, engineDepth, evalPlugin.evaluate, repetitionRule);
     console.log(`\n${currentPlayer} executes ${describeAction(aiAction)}`);
     state = applyAction(state, aiAction, currentPlayer);
     recordMove(currentPlayer, aiAction);

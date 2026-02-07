@@ -13,6 +13,9 @@ export interface MinimaxResult {
   pv: Action[];
 }
 
+export type RepetitionRule = "search" | "strict";
+const DEFAULT_REPETITION_RULE: RepetitionRule = "search";
+
 const defaultEvaluationFunction: EvaluationFunction = DEFAULT_EVALUATION_PLUGIN.evaluate;
 
 const evaluateTerminal = (state: GameState, winner: Player | null, aiPlayer: Player, depth: number, evaluate: EvaluationFunction): number =>
@@ -72,7 +75,8 @@ export const minimax = (
   evaluate: EvaluationFunction = defaultEvaluationFunction,
   alpha: number = -Infinity,
   beta: number = Infinity,
-  ttable: Map<string, TTEntry> | null = null
+  ttable: Map<string, TTEntry> | null = null,
+  repetitionRule: RepetitionRule = DEFAULT_REPETITION_RULE
 ): MinimaxResult => {
   stats.nodesVisited++;
 
@@ -117,14 +121,15 @@ export const minimax = (
 
   visited.add(key);
 
-  // Filter actions that would lead to a state in history
   const allActions = getAvailableActions(state, currentPlayer);
-  const actions = allActions.filter(action => {
-    const nextState = applyAction(state, action, currentPlayer);
-    const nextPlayer = getOpponent(currentPlayer);
-    const nextKey = getStateKey(nextState, nextPlayer);
-    return !history.has(nextKey);
-  });
+  const actions = repetitionRule === "strict"
+    ? allActions.filter(action => {
+        const nextState = applyAction(state, action, currentPlayer);
+        const nextPlayer = getOpponent(currentPlayer);
+        const nextKey = getStateKey(nextState, nextPlayer);
+        return !history.has(nextKey);
+      })
+    : allActions;
 
   if (actions.length === 0) {
     visited.delete(key);
@@ -162,7 +167,7 @@ export const minimax = (
     const nextState = applyAction(state, action, currentPlayer);
     const result = minimax(
       nextState, opponent, aiPlayer, depth + 1, maxDepth,
-      visited, history, stats, evaluate, localAlpha, localBeta, ttable
+      visited, history, stats, evaluate, localAlpha, localBeta, ttable, repetitionRule
     );
 
     if (isMaximizing) {
@@ -220,16 +225,19 @@ export const getEngineEvaluations = (
   history: Set<string>,
   depthLimit = 6,
   count = 3,
-  evaluate: EvaluationFunction = defaultEvaluationFunction
+  evaluate: EvaluationFunction = defaultEvaluationFunction,
+  repetitionRule: RepetitionRule = DEFAULT_REPETITION_RULE
 ): { evaluations: EngineEvaluation[]; stats: MinimaxStats } => {
   const stats: MinimaxStats = { nodesVisited: 0, cacheHits: 0, cutoffs: 0 };
   const allActions = getAvailableActions(state, aiPlayer);
-  const actions = allActions.filter(action => {
-    const nextState = applyAction(state, action, aiPlayer);
-    const nextPlayer = getOpponent(aiPlayer);
-    const nextKey = getStateKey(nextState, nextPlayer);
-    return !history.has(nextKey);
-  });
+  const actions = repetitionRule === "strict"
+    ? allActions.filter(action => {
+        const nextState = applyAction(state, action, aiPlayer);
+        const nextPlayer = getOpponent(aiPlayer);
+        const nextKey = getStateKey(nextState, nextPlayer);
+        return !history.has(nextKey);
+      })
+    : allActions;
 
   if (actions.length === 0) {
     return { evaluations: [], stats };
@@ -246,8 +254,7 @@ export const getEngineEvaluations = (
     const visited = new Set<string>([rootKey]);
     const result = minimax(
       nextState, opponent, aiPlayer, 1, depthLimit,
-      visited, history, stats, evaluate,
-      -Infinity, Infinity, ttable
+      visited, history, stats, evaluate, -Infinity, Infinity, ttable, repetitionRule
     );
     return {
       score: result.score,
@@ -268,11 +275,16 @@ export const chooseBestAction = (
   aiPlayer: Player,
   history: Set<string>,
   depthLimit = 6,
-  evaluate: EvaluationFunction = defaultEvaluationFunction
+  evaluate: EvaluationFunction = defaultEvaluationFunction,
+  repetitionRule: RepetitionRule = DEFAULT_REPETITION_RULE
 ): Action => {
-  const { evaluations } = getEngineEvaluations(state, aiPlayer, history, depthLimit, 1, evaluate);
+  const { evaluations } = getEngineEvaluations(state, aiPlayer, history, depthLimit, 1, evaluate, repetitionRule);
   if (evaluations.length === 0) {
-    throw new Error("Minimax could not find a move (all moves likely repeat history)");
+    throw new Error(
+      repetitionRule === "strict"
+        ? "Minimax could not find a move (all moves likely repeat history in strict mode)"
+        : "Minimax could not find a move"
+    );
   }
   return evaluations[0].action!;
 };

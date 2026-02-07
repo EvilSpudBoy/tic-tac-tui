@@ -9,7 +9,7 @@ A terminal-based implementation of [**Tic-Tac-Two**](https://gamescrafters.berke
 - **Fixed player order:** X is always the first player with four pieces and opens the match; O plays second, but you can choose whether to control X, control O (letting the AI still open as X), or hand the whole match to the computer through the interactive Computer-vs-Computer prompt at startup.
 - **Minimax AI with alpha-beta pruning:** A depth-limited Minimax engine with full alpha-beta pruning, a transposition table for caching evaluated positions, and move-ordering heuristics that prioritise centre placements. The engine displays iterative-deepening progress as it thinks, and reports transposition-table hits and cutoff counts alongside the evaluation.
 - **Full-screen interactive TUI:** The terminal renders a full-screen interface with a colour-coded board, a compact status bar, an engine evaluation widget that updates in-place during AI thinking, a scrollable move history, and a raw-mode cycling move selector (Tab/↑↓ to browse, type to filter, Enter to confirm).
-- **Repetition avoidance:** The engine tracks every previously seen board+active-grid configuration and marks moves that would recreate one as unavailable, so only fresh positions can be chosen.
+- **Configurable repetition handling:** By default, repetition is handled inside Minimax search as a cycle guard (without forbidding legal moves). Legacy strict no-repeat behavior is still available via a CLI flag.
 
 ## Rules Overview
 
@@ -21,7 +21,7 @@ X is always the first player with four pieces, O plays second, and the CLI enfor
 4. Everyone only has four markers—after you place the fourth peg, you cannot place any more and must move one of your existing pieces into an empty slot inside the active grid.
 5. Only three-in-a-row lines **fully contained in the active grid** count. If your marker completes such a line, you win; otherwise play continues.
 6. If all cells fill without a valid line, the game is a draw.
-7. Each turn must avoid recreating any previously seen board layout (including the active grid and whose turn it is); repeat candidates show up as "unavailable" in the move selector.
+7. By default, repeated positions are handled as cycles during search only; legal move generation does not forbid them. You can opt into strict no-repeat mode (`--repetition-rule=strict`) to block moves that recreate a previously seen board+active-grid+turn state.
 
 ## Rule Test Mapping
 
@@ -33,7 +33,7 @@ X is always the first player with four pieces, O plays second, and the CLI enfor
 | Each player must place at least two markers before shifting the grid or moving a previously placed peg. | `shift actions become available only after placing two markers`, `applyAction rejects shifts before the placement minimum` |
 | Only lines fully contained in the active grid count as wins. | `winner detection ignores lines outside the active grid`, `winner detection recognizes lines inside the active grid` |
 | A filled board without a valid line is a draw. | `draw detection stays false if a winner exists on a full board` |
-| Repeating any earlier board+active-grid configuration is forbidden and listed as unavailable in the menu. | `wouldRepeatState detects repeated positions` |
+| Repetition handling is configurable: default search-only cycle guard, optional strict no-repeat filtering. | `wouldRepeatState detects repeated positions`, `Repetition handling modes` |
 
 ## Quick Start
 
@@ -66,7 +66,7 @@ At startup you choose to play as X, as O (letting the AI open as X), or Computer
 - **Move history:** Use **PgUp/PgDn** to scroll through the move-history window beneath the board.
 - **Commands:** Type `ai` (or `auto`) to hand the current turn to the engine, `restart` (or `r`) to begin a new match, or `exit`/`quit`/`q` to leave.
 - Placement limits, movement minimums, and active-grid bounds are all enforced automatically—only valid options appear in the selector.
-- Moves that would recreate a previously seen position are shown as unavailable.
+- In `--repetition-rule=strict`, moves that recreate a previously seen position are shown as unavailable.
 
 ## Engine Reports & Self-play
 
@@ -79,6 +79,7 @@ Every AI decision surfaces a short engine report. The CLI prints the score (in t
 | `--eval=<name>` | `default` | Evaluation plugin for both players |
 | `--eval-x=<name>` | — | Evaluation plugin for player X only |
 | `--eval-o=<name>` | — | Evaluation plugin for player O only |
+| `--repetition-rule=<search\\|strict>` | `search` | Repetition handling policy (`search` = cycle guard in Minimax only, `strict` = forbid previously seen states) |
 | `--list-evals` | — | List available evaluation plugins and exit |
 
 During AI thinking, the TUI shows an iterative-deepening progress display that updates in-place with the current depth, node count, transposition-table hits, and cutoff count.
@@ -110,7 +111,7 @@ The `runSelfPlayEpisode` and `runSelfPlayTraining` helpers wrap the self-play lo
   - `tests/game.test.js` — Core rules, placement/shift/move enforcement, winner/draw detection, evaluation plugin registry, and self-play training scaffolding.
   - `tests/cli.test.js` — Startup-choice parsing and AI hand-off command detection.
   - `tests/coverage.test.js` — Additional edge-case coverage for diagonal shifts, active-grid helpers, and state-key generation.
-  - `tests/repetition.test.js` — Repeated-state detection and avoidance.
+  - `tests/repetition.test.js` — Repetition handling behavior for `search` vs `strict`.
   - `tests/minimax-bench.test.js` — Performance benchmarks for the minimax engine, verifying alpha-beta pruning and transposition-table effectiveness.
 - `npm run coverage` wraps the test suite with `c8` and produces textual plus HTML reports (`coverage/index.html`).
 - Every run writes a summary to `tests/TEST_RESULTS.md` so you can quickly verify which rules the suite exercises and the AI behaviors it protects.
