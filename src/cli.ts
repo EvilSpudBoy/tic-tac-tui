@@ -185,6 +185,8 @@ const computeEvalData = (
     depth: engineDepth,
     maxDepth: engineDepth,
     nodesVisited: stats.nodesVisited,
+    cacheHits: stats.cacheHits,
+    cutoffs: stats.cutoffs,
     evalName: evalPlugin.name
   };
 };
@@ -249,6 +251,8 @@ const renderProgressiveEval = async (
       depth,
       maxDepth: engineDepth,
       nodesVisited: stats.nodesVisited,
+      cacheHits: stats.cacheHits,
+      cutoffs: stats.cutoffs,
       evalName: evalPlugin.name
     };
 

@@ -12,7 +12,7 @@ describe("Coverage Improvement Tests", () => {
       const state = createInitialState();
       const visited = new Set();
       const history = new Set();
-      const stats = { nodesVisited: 0 };
+      const stats = { nodesVisited: 0, cacheHits: 0, cutoffs: 0 };
       // Call with depth = maxDepth
       const result = minimax(state, FIRST_PLAYER, FIRST_PLAYER, 5, 5, visited, history, stats);
       assert.strictEqual(result.score, 0); // Should be neutral/0 because not terminal
@@ -25,7 +25,7 @@ describe("Coverage Improvement Tests", () => {
       const key = getStateKey(state, FIRST_PLAYER);
       visited.add(key);
       const history = new Set();
-      const stats = { nodesVisited: 0 };
+      const stats = { nodesVisited: 0, cacheHits: 0, cutoffs: 0 };
       
       const result = minimax(state, FIRST_PLAYER, FIRST_PLAYER, 0, 5, visited, history, stats);
       assert.strictEqual(result.score, 0);

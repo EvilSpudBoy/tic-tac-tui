@@ -237,23 +237,44 @@ export const applyAction = (state: GameState, action: Action, player: Player): G
 };
 
 export const getWinner = (state: GameState): Player | null => {
-  for (const line of relativeWinningLines) {
-    const marks = line.map(([rowDelta, colDelta]) => {
-      const row = state.activeY + rowDelta;
-      const col = state.activeX + colDelta;
-      return state.board[toIndex(row, col)];
-    });
-    if (marks.every((mark) => mark !== " " && mark === marks[0])) {
-      return marks[0] as Player;
-    }
+  const { board, activeX, activeY } = state;
+  for (let i = 0; i < relativeWinningLines.length; i++) {
+    const line = relativeWinningLines[i];
+    const first = board[(activeY + line[0][0]) * BOARD_SIZE + activeX + line[0][1]];
+    if (first === " ") continue;
+    const second = board[(activeY + line[1][0]) * BOARD_SIZE + activeX + line[1][1]];
+    if (second !== first) continue;
+    const third = board[(activeY + line[2][0]) * BOARD_SIZE + activeX + line[2][1]];
+    if (third === first) return first as Player;
   }
   return null;
 };
 
-export const isDraw = (state: GameState): boolean => state.board.every((cell) => cell !== " ") && !getWinner(state);
+export const isDraw = (state: GameState): boolean => {
+  const { board } = state;
+  for (let i = 0; i < board.length; i++) {
+    if (board[i] === " ") return false;
+  }
+  return !getWinner(state);
+};
 
-export const getStateKey = (state: GameState, currentPlayer: Player): string =>
-  `${state.board.join("")}|${state.activeX},${state.activeY}|${currentPlayer}|${state.placementsByPlayer.X},${state.placementsByPlayer.O}`;
+export const getStateKey = (state: GameState, currentPlayer: Player): string => {
+  const { board, activeX, activeY, placementsByPlayer } = state;
+  // Direct concatenation is faster than board.join("") for small arrays
+  let key = "";
+  for (let i = 0; i < board.length; i++) key += board[i];
+  key += "|";
+  key += activeX;
+  key += ",";
+  key += activeY;
+  key += "|";
+  key += currentPlayer;
+  key += "|";
+  key += placementsByPlayer.X;
+  key += ",";
+  key += placementsByPlayer.O;
+  return key;
+};
 
 export const getActiveCellCoordinates = ({ activeX, activeY }: GameState): [number, number, number, number] => [
   activeY,

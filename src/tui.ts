@@ -74,12 +74,17 @@ export interface EvalWidgetData {
   depth: number;
   maxDepth: number;
   nodesVisited: number;
+  cacheHits?: number;
+  cutoffs?: number;
   evalName?: string;
 }
 
 export const renderEvalWidget = (data: EvalWidgetData): string => {
   const evalLabel = data.evalName ? ` [${data.evalName}]` : "";
-  const header = `${DIM}── Engine${evalLabel} (depth ${data.depth}/${data.maxDepth}) · Nodes: ${data.nodesVisited.toLocaleString()} ──${RESET}`;
+  const statsExtra = (data.cacheHits || data.cutoffs)
+    ? ` · TT: ${(data.cacheHits ?? 0).toLocaleString()} · Cut: ${(data.cutoffs ?? 0).toLocaleString()}`
+    : "";
+  const header = `${DIM}── Engine${evalLabel} (depth ${data.depth}/${data.maxDepth}) · Nodes: ${data.nodesVisited.toLocaleString()}${statsExtra} ──${RESET}`;
   if (!data.evaluations.length) {
     return `${header}\n  ${DIM}(no evaluations)${RESET}`;
   }
