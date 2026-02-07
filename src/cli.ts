@@ -32,6 +32,7 @@ import {
   DIM
 } from "./tui";
 import { parseStartupChoice, isAiHandOffCommand } from "./cli-utils";
+import { getEvaluationPlugin, listEvaluationPlugins } from "./evaluation";
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -95,6 +96,23 @@ const engineDepth = parseNumericArg("--engine-depth", 6);
 const multiPvCount = parseNumericArg("--multi-pv", 3);
 const selfPlayMode = args.includes("--self-play");
 
+const parseStringArg = (flag: string): string | undefined => {
+  const entry = args.find((item) => item.startsWith(`${flag}=`));
+  if (!entry) return undefined;
+  return entry.split("=")[1];
+};
+
+const evalXPlugin = getEvaluationPlugin(parseStringArg("--eval-x") ?? parseStringArg("--eval"));
+const evalOPlugin = getEvaluationPlugin(parseStringArg("--eval-o") ?? parseStringArg("--eval"));
+
+if (args.includes("--list-evals")) {
+  console.log("Available evaluation plugins:");
+  for (const p of listEvaluationPlugins()) {
+    console.log(`  ${BOLD}${p.name}${RESET} — ${p.description}`);
+  }
+  process.exit(0);
+}
+
 const describeActiveGrid = (state: GameState): string => {
   const [rowStart, rowEnd, colStart, colEnd] = getActiveCellCoordinates(state);
   const rows = rowLabels.slice(rowStart, rowEnd + 1).join("-");
@@ -156,7 +174,8 @@ const computeEvalData = (
   history: Set<string>
 ): EvalWidgetData | null => {
   if (multiPvCount <= 0) return null;
-  const { evaluations, stats } = getEngineEvaluations(state, player, history, engineDepth, multiPvCount);
+  const evalPlugin = player === "X" ? evalXPlugin : evalOPlugin;
+  const { evaluations, stats } = getEngineEvaluations(state, player, history, engineDepth, multiPvCount, evalPlugin.evaluate);
   if (!evaluations.length) return null;
   return {
     evaluations: evaluations.map((e) => ({
@@ -165,7 +184,8 @@ const computeEvalData = (
     })),
     depth: engineDepth,
     maxDepth: engineDepth,
-    nodesVisited: stats.nodesVisited
+    nodesVisited: stats.nodesVisited,
+    evalName: evalPlugin.name
   };
 };
 
@@ -203,17 +223,23 @@ const renderFullScreen = (
 
 // --- Progressive engine eval (iterative deepening display) ---
 
-const renderProgressiveEval = (
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+const renderProgressiveEval = async (
   state: GameState,
   player: Player,
   history: Set<string>
-): void => {
+): Promise<void> => {
   if (multiPvCount <= 0) return;
 
+  const evalPlugin = player === "X" ? evalXPlugin : evalOPlugin;
   let prevLineCount = 0;
 
   for (let depth = 1; depth <= engineDepth; depth++) {
-    const { evaluations, stats } = getEngineEvaluations(state, player, history, depth, multiPvCount);
+    // Yield to let the event loop process signals (e.g. Ctrl+C)
+    await yieldToEventLoop();
+
+    const { evaluations, stats } = getEngineEvaluations(state, player, history, depth, multiPvCount, evalPlugin.evaluate);
 
     const evalData: EvalWidgetData = {
       evaluations: evaluations.map((e) => ({
@@ -222,7 +248,8 @@ const renderProgressiveEval = (
       })),
       depth,
       maxDepth: engineDepth,
-      nodesVisited: stats.nodesVisited
+      nodesVisited: stats.nodesVisited,
+      evalName: evalPlugin.name
     };
 
     // Overwrite previous eval block
@@ -449,12 +476,12 @@ const promptForPlayerChoice = async (): Promise<Player | "SELF_PLAY"> => {
   }
 };
 
-const executeAiTurn = (
+const executeAiTurn = async (
   state: GameState,
   player: Player,
   humanPlayer: Player,
   history: Set<string>
-): GameState => {
+): Promise<GameState> => {
   clearScreen();
   console.log(renderStatusBar(state, player, humanPlayer));
   console.log();
@@ -466,9 +493,10 @@ const executeAiTurn = (
   }
 
   console.log(`\n${BOLD}AI is thinking...${RESET}\n`);
-  renderProgressiveEval(state, player, history);
+  await renderProgressiveEval(state, player, history);
 
-  const aiAction = chooseBestAction(state, player, history, engineDepth);
+  const evalPlugin = player === "X" ? evalXPlugin : evalOPlugin;
+  const aiAction = chooseBestAction(state, player, history, engineDepth, evalPlugin.evaluate);
   const nextState = applyAction(state, aiAction, player);
   recordMove(player, aiAction);
   return nextState;
@@ -499,7 +527,7 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
     if (currentPlayer === humanPlayer) {
       const { action, handoffToAi } = await selectMove(state, humanPlayer, seenStates);
       if (handoffToAi) {
-        const nextState = executeAiTurn(state, currentPlayer, humanPlayer, seenStates);
+        const nextState = await executeAiTurn(state, currentPlayer, humanPlayer, seenStates);
         currentPlayer = getOpponent(currentPlayer);
         state = nextState;
         addStateToHistory(seenStates, state, currentPlayer);
@@ -513,7 +541,7 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
       currentPlayer = action.nextPlayer;
       addStateToHistory(seenStates, state, currentPlayer);
     } else {
-      const nextState = executeAiTurn(state, currentPlayer, humanPlayer, seenStates);
+      const nextState = await executeAiTurn(state, currentPlayer, humanPlayer, seenStates);
       currentPlayer = getOpponent(currentPlayer);
       state = nextState;
       addStateToHistory(seenStates, state, currentPlayer);
@@ -558,9 +586,10 @@ const playSelfMatch = async (): Promise<void> => {
     if (winner || isDraw(state)) break;
 
     console.log(`\n${BOLD}AI selecting move...${RESET}\n`);
-    renderProgressiveEval(state, currentPlayer, seenStates);
+    await renderProgressiveEval(state, currentPlayer, seenStates);
 
-    const aiAction = chooseBestAction(state, currentPlayer, seenStates, engineDepth);
+    const evalPlugin = currentPlayer === "X" ? evalXPlugin : evalOPlugin;
+    const aiAction = chooseBestAction(state, currentPlayer, seenStates, engineDepth, evalPlugin.evaluate);
     console.log(`\n${currentPlayer} executes ${describeAction(aiAction)}`);
     state = applyAction(state, aiAction, currentPlayer);
     recordMove(currentPlayer, aiAction);

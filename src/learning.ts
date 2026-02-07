@@ -29,11 +29,15 @@ export interface SelfPlayEpisodeResult {
 export interface SelfPlayOptions {
   depthLimit?: number;
   evaluationPlugin?: EvaluationPlugin;
+  evaluationPluginX?: EvaluationPlugin;
+  evaluationPluginO?: EvaluationPlugin;
   maxTurns?: number;
 }
 
 export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpisodeResult => {
-  const evaluationPlugin = options.evaluationPlugin ?? DEFAULT_EVALUATION_PLUGIN;
+  const fallbackPlugin = options.evaluationPlugin ?? DEFAULT_EVALUATION_PLUGIN;
+  const evalPluginX = options.evaluationPluginX ?? fallbackPlugin;
+  const evalPluginO = options.evaluationPluginO ?? fallbackPlugin;
   const depthLimit = options.depthLimit ?? 6;
   const maxTurns = options.maxTurns ?? 200;
 
@@ -41,12 +45,7 @@ export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpiso
   let currentPlayer: Player = FIRST_PLAYER;
   const history: SelfPlayTurn[] = [];
 
-    // We need to keep a set of state keys for the AI to check against
-    // However, 'history' here is an array of objects. We should construct the Set<string> of keys.
-    // Ideally we maintain a separate Set for efficient lookup.
     const historySet = new Set<string>();
-    // Pre-populate with initial state? The rules usually say "repeat ANY previous state".
-    // So yes, we should add initial state.
     historySet.add(getStateKey(state, currentPlayer));
 
     for (let turn = 0; turn < maxTurns; turn += 1) {
@@ -55,7 +54,8 @@ export const runSelfPlayEpisode = (options: SelfPlayOptions = {}): SelfPlayEpiso
         return { winner, turnCount: turn, history };
       }
 
-      const action = chooseBestAction(state, currentPlayer, historySet, depthLimit, evaluationPlugin.evaluate);
+      const evalPlugin = currentPlayer === "X" ? evalPluginX : evalPluginO;
+      const action = chooseBestAction(state, currentPlayer, historySet, depthLimit, evalPlugin.evaluate);
       history.push({ stateBefore: state, player: currentPlayer, action });
       state = applyAction(state, action, currentPlayer);
       currentPlayer = getOpponent(currentPlayer);
@@ -90,6 +90,8 @@ export const runSelfPlayTraining = (
   const episodeOptions: SelfPlayOptions = {
     depthLimit: options.depthLimit,
     evaluationPlugin: options.evaluationPlugin,
+    evaluationPluginX: options.evaluationPluginX,
+    evaluationPluginO: options.evaluationPluginO,
     maxTurns: options.maxTurns
   };
 

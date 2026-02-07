@@ -21,7 +21,7 @@ const {
   SECOND_PLAYER
 } = require("../dist/game.js");
 const { chooseBestAction, minimax, getEngineEvaluations } = require("../dist/minimax.js");
-const { registerEvaluationPlugin, getEvaluationPlugin, listEvaluationPlugins, DEFAULT_EVALUATION_PLUGIN } = require("../dist/evaluation.js");
+const { registerEvaluationPlugin, getEvaluationPlugin, listEvaluationPlugins, DEFAULT_EVALUATION_PLUGIN, POSITIONAL_EVALUATION_PLUGIN } = require("../dist/evaluation.js");
 const { runSelfPlayEpisode, runSelfPlayTraining } = require("../dist/learning.js");
 
 
@@ -361,15 +361,60 @@ test("draw detection stays false if a winner exists on a full board", () => {
 test("evaluation plugin registry supports extensibility", () => {
   const sentinelPlugin = {
     name: "sentinel-ext",
+    description: "Test sentinel plugin",
     evaluate: () => 123
   };
   registerEvaluationPlugin(sentinelPlugin);
   const loaded = getEvaluationPlugin("sentinel-ext");
-  assert.strictEqual(loaded.evaluate(null, "X", 0), 123);
+  assert.strictEqual(loaded.evaluate(createInitialState(), null, "X", 0), 123);
   assert.strictEqual(getEvaluationPlugin("missing").name, DEFAULT_EVALUATION_PLUGIN.name);
   const availableNames = listEvaluationPlugins().map((plugin) => plugin.name);
   assert.ok(availableNames.includes(DEFAULT_EVALUATION_PLUGIN.name));
   assert.ok(availableNames.includes("sentinel-ext"));
+});
+
+test("positional evaluation plugin is registered as built-in", () => {
+  const plugin = getEvaluationPlugin("positional");
+  assert.strictEqual(plugin.name, "positional");
+  assert.ok(plugin.description.length > 0, "Positional plugin should have a description");
+  const availableNames = listEvaluationPlugins().map((p) => p.name);
+  assert.ok(availableNames.includes("positional"));
+});
+
+test("positional eval scores threats higher than empty board", () => {
+  const emptyState = createInitialState();
+  const emptyScore = POSITIONAL_EVALUATION_PLUGIN.evaluate(emptyState, null, "X", 0);
+  assert.strictEqual(emptyScore, 0, "Empty board should score 0 for both players");
+
+  // Place two X pieces in a row to create a threat
+  const activeIndices = getActiveIndices(emptyState);
+  let state = applyAction(emptyState, { type: "place", index: activeIndices[0] }, "X");
+  state = applyAction(state, { type: "place", index: activeIndices[1] }, "X");
+  const threatScore = POSITIONAL_EVALUATION_PLUGIN.evaluate(state, null, "X", 0);
+  assert.ok(threatScore > emptyScore, "Two-in-a-row threat should produce a positive score for the threatening player");
+});
+
+test("positional eval values center control", () => {
+  const state = createInitialState();
+  const activeIndices = getActiveIndices(state);
+  // Center of 3x3 active grid = index 4 (middle)
+  const centerIndex = activeIndices[4];
+  const cornerIndex = activeIndices[0];
+
+  const centerState = applyAction(state, { type: "place", index: centerIndex }, "X");
+  const cornerState = applyAction(state, { type: "place", index: cornerIndex }, "X");
+
+  const centerScore = POSITIONAL_EVALUATION_PLUGIN.evaluate(centerState, null, "X", 0);
+  const cornerScore = POSITIONAL_EVALUATION_PLUGIN.evaluate(cornerState, null, "X", 0);
+  assert.ok(centerScore > cornerScore, "Center placement should score higher than corner placement");
+});
+
+test("positional eval returns large scores for terminal states", () => {
+  const state = createInitialState();
+  const winScore = POSITIONAL_EVALUATION_PLUGIN.evaluate(state, "X", "X", 0);
+  const lossScore = POSITIONAL_EVALUATION_PLUGIN.evaluate(state, "O", "X", 0);
+  assert.ok(winScore > 50, "Win should produce a large positive score");
+  assert.ok(lossScore < -50, "Loss should produce a large negative score");
 });
 
 test("self-play training scaffolding aggregates episodes", () => {

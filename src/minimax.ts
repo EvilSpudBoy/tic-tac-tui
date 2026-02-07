@@ -13,8 +13,8 @@ export interface MinimaxResult {
 
 const defaultEvaluationFunction: EvaluationFunction = DEFAULT_EVALUATION_PLUGIN.evaluate;
 
-const evaluateTerminal = (winner: Player | null, aiPlayer: Player, depth: number, evaluate: EvaluationFunction): number =>
-  evaluate(winner, aiPlayer, depth);
+const evaluateTerminal = (state: GameState, winner: Player | null, aiPlayer: Player, depth: number, evaluate: EvaluationFunction): number =>
+  evaluate(state, winner, aiPlayer, depth);
 
 export const minimax = (
   state: GameState,
@@ -30,20 +30,20 @@ export const minimax = (
   stats.nodesVisited++;
   const winner = getWinner(state);
   if (winner) {
-    return { score: evaluateTerminal(winner, aiPlayer, depth, evaluate), pv: [] };
+    return { score: evaluateTerminal(state, winner, aiPlayer, depth, evaluate), pv: [] };
   }
 
   if (isDraw(state)) {
-    return { score: evaluateTerminal(null, aiPlayer, depth, evaluate), pv: [] };
+    return { score: evaluateTerminal(state, null, aiPlayer, depth, evaluate), pv: [] };
   }
 
   if (depth >= maxDepth) {
-    return { score: evaluateTerminal(null, aiPlayer, depth, evaluate), pv: [] };
+    return { score: evaluateTerminal(state, null, aiPlayer, depth, evaluate), pv: [] };
   }
 
   const key = getStateKey(state, currentPlayer);
   if (visited.has(key)) {
-    return { score: evaluateTerminal(null, aiPlayer, depth, evaluate), pv: [] };
+    return { score: evaluateTerminal(state, null, aiPlayer, depth, evaluate), pv: [] };
   }
 
   visited.add(key);
@@ -60,7 +60,7 @@ export const minimax = (
   if (actions.length === 0) {
     // Repetition or no moves
     visited.delete(key);
-    return { score: evaluateTerminal(null, aiPlayer, depth, evaluate), pv: [] };
+    return { score: evaluateTerminal(state, null, aiPlayer, depth, evaluate), pv: [] };
   }
 
   const opponent = getOpponent(currentPlayer);
