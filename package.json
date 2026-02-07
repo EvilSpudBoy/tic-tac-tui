@@ -19,7 +19,7 @@
     "typescript",
     "minimax"
   ],
-  "author": "",
+  "author": "EvilSpudBoy",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^25.2.1",
