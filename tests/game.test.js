@@ -298,7 +298,7 @@ test("minimax short-circuits on already visited states", () => {
   const state = createInitialState();
   const visited = new Set();
   visited.add(getStateKey(state, "X"));
-  const result = minimax(state, "X", "X", 0, 2, visited);
+  const result = minimax(state, "X", "X", 0, 2, visited, new Set(), { nodesVisited: 0 });
   assert.strictEqual(result.score, 0);
   assert.strictEqual(result.action, undefined);
 });
@@ -316,7 +316,7 @@ test("minimax returns the winning principal variation", () => {
   const activeIndices = getActiveIndices(state);
   state = applyAction(state, { type: "place", index: activeIndices[0] }, "X");
   state = applyAction(state, { type: "place", index: activeIndices[1] }, "X");
-  const result = minimax(state, "X", "X", 0, 4, new Set(), new Set());
+  const result = minimax(state, "X", "X", 0, 4, new Set(), new Set(), { nodesVisited: 0 });
   assert.ok(result.pv.length > 0, "Principal variation should include at least one action");
   assert.strictEqual(result.pv[0].type, "place");
   assert.strictEqual(result.pv[0].index, activeIndices[2]);

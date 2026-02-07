@@ -17,7 +17,20 @@ import {
   isDraw
 } from "./game";
 import { chooseBestAction, getEngineEvaluations } from "./minimax";
-import { clearScreen, renderBoard, renderHelp } from "./tui";
+import {
+  clearScreen,
+  renderBoard,
+  renderStatusBar,
+  renderEvalWidget,
+  renderMoveHistoryWindow,
+  renderMoveSelectorLine,
+  renderHelp,
+  EvalWidgetData,
+  HISTORY_WINDOW_SIZE,
+  BOLD,
+  RESET,
+  DIM
+} from "./tui";
 import { parseStartupChoice, isAiHandOffCommand } from "./cli-utils";
 
 const rl = readline.createInterface({
@@ -43,7 +56,7 @@ const directionLabels: Record<string, string> = {
 };
 
 const moveHistory: string[] = [];
-const MAX_MOVE_HISTORY = 8;
+const MAX_MOVE_HISTORY = 50;
 
 const formatSquare = (index: number): string => {
   const row = rowLabels[Math.floor(index / BOARD_SIZE)];
@@ -58,34 +71,21 @@ const describeAction = (action: Action): string => {
     case "move":
       return `move ${formatSquare(action.from)} → ${formatSquare(action.to)}`;
     default: {
-      const directionKey = `${action.dx},${action.dy}`;
-      const directionLabel = directionLabels[directionKey] || `dx ${action.dx}, dy ${action.dy}`;
-      return `shift ${directionLabel}`;
+      const dirKey = `${action.dx},${action.dy}`;
+      return `shift ${directionLabels[dirKey] || `dx ${action.dx}, dy ${action.dy}`}`;
     }
   }
 };
 
 const recordMove = (player: Player, action: Action): void => {
   moveHistory.unshift(`[${player}] ${describeAction(action)}`);
-  if (moveHistory.length > MAX_MOVE_HISTORY) {
-    moveHistory.pop();
-  }
-};
-
-const renderMoveHistory = (): void => {
-  if (!moveHistory.length) {
-    return;
-  }
-  console.log("\nMove history:");
-  moveHistory.forEach((entry) => console.log(`  ${entry}`));
+  if (moveHistory.length > MAX_MOVE_HISTORY) moveHistory.pop();
 };
 
 const args = process.argv.slice(2);
 const parseNumericArg = (flag: string, defaultValue: number): number => {
   const entry = args.find((item) => item.startsWith(`${flag}=`));
-  if (!entry) {
-    return defaultValue;
-  }
+  if (!entry) return defaultValue;
   const [, value] = entry.split("=");
   const parsed = Number(value);
   return Number.isNaN(parsed) ? defaultValue : parsed;
@@ -102,13 +102,13 @@ const describeActiveGrid = (state: GameState): string => {
 };
 
 const formatPrincipalVariation = (pv: Action[]): string => {
-  if (!pv.length) {
-    return "<none>";
-  }
+  if (!pv.length) return "<none>";
   return pv.map(describeAction).join(" → ");
 };
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+// --- Action menu ---
 
 type ActionMenuEntry = {
   action: Action;
@@ -139,22 +139,6 @@ const buildActionMenu = (
   });
 };
 
-const renderActionMenu = (entries: ActionMenuEntry[]): ActionMenuEntry[] => {
-  if (!entries.length) {
-    console.log("\nNo legal moves appear on your turn right now.");
-    return [];
-  }
-  const available = entries.filter((entry) => !entry.repeats);
-  console.log("\nSelect a move from the numbered list below:");
-  available.forEach((entry, index) => console.log(`  ${index + 1}. ${entry.label}`));
-  const repeats = entries.filter((entry) => entry.repeats);
-  if (repeats.length) {
-    console.log("\nUnavailable (would repeat a previous position):");
-    repeats.forEach((entry) => console.log(`  - ${entry.label}`));
-  }
-  return available;
-};
-
 type HumanMoveResult = {
   action: ActionMenuEntry | null;
   handoffToAi?: boolean;
@@ -164,114 +148,303 @@ const addStateToHistory = (history: Set<string>, state: GameState, player: Playe
   history.add(getStateKey(state, player));
 };
 
-const renderStatus = (state: GameState, current: Player, humanPlayer: Player): void => {
-  clearScreen();
-  console.log("TicTacTwo CLI — Moveable grid variant with Minimax AI\n");
-  console.log(renderBoard(state));
-  console.log(
-    `Players: ${FIRST_PLAYER} (first player with ${FIRST_PLAYER_PIECES} pieces) vs ${SECOND_PLAYER} (second).`
-  );
-  const humanRole =
-    humanPlayer === FIRST_PLAYER ? "You are first (X)" : "You are second (O, so X starts).";
-  console.log(humanRole);
-  console.log(`Each player places up to ${FIRST_PLAYER_PIECES} pieces before moving existing pegs.`);
-  console.log(`\n${describeActiveGrid(state)}`);
-  const nextActor = current === humanPlayer ? "You" : "AI";
-  console.log(`${nextActor} (${current}) are next.`);
-  console.log(`\n${renderHelp()}`);
-  renderMoveHistory();
-};
+// --- Eval helpers ---
 
-const renderEngineEvaluation = (
+const computeEvalData = (
   state: GameState,
   player: Player,
-  history: Set<string>,
-  label: string
-): void => {
-  if (multiPvCount <= 0) {
-    return;
-  }
+  history: Set<string>
+): EvalWidgetData | null => {
+  if (multiPvCount <= 0) return null;
   const { evaluations, stats } = getEngineEvaluations(state, player, history, engineDepth, multiPvCount);
-  if (!evaluations.length) {
-    return;
-  }
-  console.log(`\n${label} engine evaluation (depth ${engineDepth}):`);
-  console.log(`Nodes visited: ${stats.nodesVisited}`);
-  evaluations.forEach((entry, index) => {
-    const scoreText = entry.score >= 0 ? `+${entry.score}` : `${entry.score}`;
-    console.log(`  ${index + 1}. score ${scoreText} | PV: ${formatPrincipalVariation(entry.pv)}`);
-  });
+  if (!evaluations.length) return null;
+  return {
+    evaluations: evaluations.map((e) => ({
+      score: e.score,
+      pvText: formatPrincipalVariation(e.pv)
+    })),
+    depth: engineDepth,
+    maxDepth: engineDepth,
+    nodesVisited: stats.nodesVisited
+  };
 };
 
-const handleHumanMove = async (
+// --- Full-screen render ---
+
+let historyOffset = 0;
+
+const renderFullScreen = (
+  state: GameState,
+  current: Player,
+  humanPlayer: Player,
+  evalData: EvalWidgetData | null,
+  selectorLine: string | null
+): void => {
+  clearScreen();
+  console.log(renderStatusBar(state, current, humanPlayer));
+  console.log();
+  console.log(renderBoard(state));
+
+  if (evalData) {
+    console.log();
+    console.log(renderEvalWidget(evalData));
+  }
+
+  if (moveHistory.length) {
+    console.log();
+    console.log(renderMoveHistoryWindow(moveHistory, historyOffset));
+  }
+
+  if (selectorLine) {
+    console.log();
+    process.stdout.write(selectorLine);
+  }
+};
+
+// --- Progressive engine eval (iterative deepening display) ---
+
+const renderProgressiveEval = (
+  state: GameState,
+  player: Player,
+  history: Set<string>
+): void => {
+  if (multiPvCount <= 0) return;
+
+  let prevLineCount = 0;
+
+  for (let depth = 1; depth <= engineDepth; depth++) {
+    const { evaluations, stats } = getEngineEvaluations(state, player, history, depth, multiPvCount);
+
+    const evalData: EvalWidgetData = {
+      evaluations: evaluations.map((e) => ({
+        score: e.score,
+        pvText: formatPrincipalVariation(e.pv)
+      })),
+      depth,
+      maxDepth: engineDepth,
+      nodesVisited: stats.nodesVisited
+    };
+
+    // Overwrite previous eval block
+    if (prevLineCount > 0) {
+      process.stdout.write(`\x1b[${prevLineCount}A`);
+      for (let i = 0; i < prevLineCount; i++) {
+        process.stdout.write(`\x1b[K\n`);
+      }
+      process.stdout.write(`\x1b[${prevLineCount}A`);
+    }
+
+    const rendered = renderEvalWidget(evalData);
+    console.log(rendered);
+    prevLineCount = rendered.split("\n").length;
+  }
+};
+
+// --- Raw-mode cycling move selector ---
+
+const selectMove = async (
   state: GameState,
   humanPlayer: Player,
   history: Set<string>
 ): Promise<HumanMoveResult> => {
   const entries = buildActionMenu(state, humanPlayer, history);
-  let actionableEntries: ActionMenuEntry[] = [];
-  let showMenu = true;
+  const available = entries.filter((e) => !e.repeats);
 
-  while (true) {
-    if (showMenu) {
-      actionableEntries = renderActionMenu(entries);
-      if (!entries.length) {
-        console.log("\nNo actions remain; type 'restart' to start over or 'ai' to let the engine move.");
-      } else if (!actionableEntries.length) {
-        console.log(
-          "\nEvery legal move would recreate a position you've seen before. Use 'ai' to hand this turn over or 'restart' to begin again."
-        );
-      }
-      showMenu = false;
+  // Compute engine eval for display
+  const evalData = computeEvalData(state, humanPlayer, history);
+
+  if (!available.length) {
+    renderFullScreen(state, humanPlayer, humanPlayer, evalData, null);
+    if (!entries.length) {
+      console.log("\nNo legal moves available.");
+    } else {
+      console.log("\nAll moves repeat previous positions.");
     }
-
-    const rawInput = await prompt("Select a move number or type a command (ai/restart/exit): ");
-    const normalized = rawInput.trim().toLowerCase();
-
-    if (normalized === "exit" || normalized === "quit" || normalized === "q") {
+    const input = await prompt("Command (ai/restart/exit): ");
+    const cmd = input.toLowerCase();
+    if (cmd === "exit" || cmd === "quit" || cmd === "q") {
       rl.close();
       process.exit(0);
     }
-
-    if (normalized === "restart" || normalized === "r") {
-      return { action: null };
-    }
-
-    if (isAiHandOffCommand(rawInput)) {
-      console.log("\nHanding this turn to the AI...");
-      await sleep(400);
-      return { action: null, handoffToAi: true };
-    }
-
-    if (!actionableEntries.length) {
-      console.log("\nNo numbered options are available right now; please use ai/restart/exit.");
-      await sleep(400);
-      continue;
-    }
-
-    const selection = Number(normalized);
-    if (!Number.isNaN(selection) && Number.isInteger(selection)) {
-      if (selection >= 1 && selection <= actionableEntries.length) {
-        return { action: actionableEntries[selection - 1] };
-      }
-    }
-
-    console.log("\nSelection out of range. Pick one of the listed move numbers or use ai/restart/exit.");
-    await sleep(400);
-    showMenu = true;
+    if (isAiHandOffCommand(input)) return { action: null, handoffToAi: true };
+    return { action: null };
   }
+
+  let selectedIndex = 0;
+  let filterText = "";
+  historyOffset = 0;
+
+  const getFiltered = (): ActionMenuEntry[] => {
+    if (!filterText) return available;
+    const lower = filterText.toLowerCase();
+    return available.filter((e) => e.label.toLowerCase().includes(lower));
+  };
+
+  const clampIndex = (filtered: ActionMenuEntry[]): void => {
+    if (!filtered.length) return;
+    if (selectedIndex >= filtered.length) selectedIndex = filtered.length - 1;
+    if (selectedIndex < 0) selectedIndex = 0;
+  };
+
+  const buildSummary = (): string => {
+    const placeCount = available.filter((e) => e.action.type === "place").length;
+    const moveCount = available.filter((e) => e.action.type === "move").length;
+    const shiftCount = available.filter((e) => e.action.type === "shift").length;
+    const parts: string[] = [];
+    if (placeCount) parts.push(`${placeCount} place`);
+    if (moveCount) parts.push(`${moveCount} move`);
+    if (shiftCount) parts.push(`${shiftCount} shift`);
+    return `${DIM}${available.length} moves (${parts.join(" · ")})${RESET}`;
+  };
+
+  const redraw = (): void => {
+    const filtered = getFiltered();
+    clampIndex(filtered);
+    const current = filtered[selectedIndex] || null;
+    const selector = renderMoveSelectorLine(current, selectedIndex, filtered.length, filterText);
+    const summary = buildSummary();
+    renderFullScreen(state, humanPlayer, humanPlayer, evalData, `${summary}\n${selector}`);
+  };
+
+  // Fallback for non-TTY
+  if (!process.stdin.isTTY) {
+    redraw();
+    console.log("\n\nAvailable moves:");
+    available.forEach((e, i) => console.log(`  ${i + 1}. ${e.label}`));
+    const input = await prompt("Select move number or command: ");
+    const cmd = input.toLowerCase();
+    if (cmd === "exit" || cmd === "quit" || cmd === "q") {
+      rl.close();
+      process.exit(0);
+    }
+    if (cmd === "restart" || cmd === "r") return { action: null };
+    if (isAiHandOffCommand(input)) return { action: null, handoffToAi: true };
+    const num = Number(cmd);
+    if (!isNaN(num) && num >= 1 && num <= available.length) {
+      return { action: available[num - 1] };
+    }
+    return { action: null };
+  }
+
+  // Raw-mode keypress handler
+  return new Promise<HumanMoveResult>((resolve) => {
+    rl.pause();
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+
+    const cleanup = (): void => {
+      process.stdin.removeListener("data", onData);
+      process.stdin.setRawMode(false);
+      process.stdout.write("\n");
+      rl.resume();
+    };
+
+    const onData = (data: Buffer): void => {
+      const key = data.toString();
+
+      // Ctrl+C
+      if (key === "\x03") {
+        cleanup();
+        rl.close();
+        process.exit(0);
+      }
+
+      // Up arrow or Shift+Tab — cycle backward
+      if (key === "\x1b[A" || key === "\x1b[Z") {
+        selectedIndex--;
+        const filtered = getFiltered();
+        if (selectedIndex < 0) selectedIndex = filtered.length - 1;
+        redraw();
+        return;
+      }
+
+      // Down arrow or Tab — cycle forward
+      if (key === "\x1b[B" || key === "\t") {
+        selectedIndex++;
+        const filtered = getFiltered();
+        if (selectedIndex >= filtered.length) selectedIndex = 0;
+        redraw();
+        return;
+      }
+
+      // PageUp — scroll history up
+      if (key === "\x1b[5~") {
+        historyOffset = Math.max(0, historyOffset - HISTORY_WINDOW_SIZE);
+        redraw();
+        return;
+      }
+
+      // PageDown — scroll history down
+      if (key === "\x1b[6~") {
+        const maxOffset = Math.max(0, moveHistory.length - HISTORY_WINDOW_SIZE);
+        historyOffset = Math.min(maxOffset, historyOffset + HISTORY_WINDOW_SIZE);
+        redraw();
+        return;
+      }
+
+      // Enter — confirm selection
+      if (key === "\r" || key === "\n") {
+        const filtered = getFiltered();
+        clampIndex(filtered);
+        if (filtered[selectedIndex]) {
+          cleanup();
+          resolve({ action: filtered[selectedIndex] });
+        }
+        return;
+      }
+
+      // Backspace
+      if (key === "\x7f" || key === "\b") {
+        if (filterText.length > 0) {
+          filterText = filterText.slice(0, -1);
+          selectedIndex = 0;
+          redraw();
+        }
+        return;
+      }
+
+      // Printable character — add to filter / check for commands
+      if (key.length === 1 && key >= " " && key <= "~") {
+        filterText += key;
+        selectedIndex = 0;
+
+        const cmd = filterText.trim().toLowerCase();
+        if (cmd === "ai" || cmd === "auto") {
+          cleanup();
+          resolve({ action: null, handoffToAi: true });
+          return;
+        }
+        if (cmd === "restart") {
+          cleanup();
+          resolve({ action: null });
+          return;
+        }
+        if (cmd === "exit" || cmd === "quit") {
+          cleanup();
+          rl.close();
+          process.exit(0);
+        }
+
+        redraw();
+        return;
+      }
+    };
+
+    process.stdin.on("data", onData);
+    redraw();
+  });
 };
+
+// --- Game flow ---
 
 const promptForPlayerChoice = async (): Promise<Player | "SELF_PLAY"> => {
   while (true) {
     const rawChoice = await prompt(
-      "Choose your mode — X, O, or Computer-vs-Computer (enter C). X always moves first; selecting O lets the AI open as X. [default X]: "
+      "Choose your mode — X, O, or Computer-vs-Computer (C). [default X]: "
     );
     const choice = parseStartupChoice(rawChoice);
-    if (choice) {
-      return choice;
-    }
-    console.log("\nPlease enter X, O, or C to start the requested mode.");
+    if (choice) return choice;
+    console.log("\nPlease enter X, O, or C.");
     await sleep(400);
   }
 };
@@ -279,10 +452,22 @@ const promptForPlayerChoice = async (): Promise<Player | "SELF_PLAY"> => {
 const executeAiTurn = (
   state: GameState,
   player: Player,
+  humanPlayer: Player,
   history: Set<string>
 ): GameState => {
-  renderEngineEvaluation(state, player, history, "AI");
-  console.log("\nAI is thinking...");
+  clearScreen();
+  console.log(renderStatusBar(state, player, humanPlayer));
+  console.log();
+  console.log(renderBoard(state));
+
+  if (moveHistory.length) {
+    console.log();
+    console.log(renderMoveHistoryWindow(moveHistory, 0));
+  }
+
+  console.log(`\n${BOLD}AI is thinking...${RESET}\n`);
+  renderProgressiveEval(state, player, history);
+
   const aiAction = chooseBestAction(state, player, history, engineDepth);
   const nextState = applyAction(state, aiAction, player);
   recordMove(player, aiAction);
@@ -296,20 +481,27 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
   addStateToHistory(seenStates, state, currentPlayer);
 
   while (true) {
-    renderStatus(state, currentPlayer, humanPlayer);
-
     const winner = getWinner(state);
     if (winner || isDraw(state)) {
+      renderFullScreen(state, currentPlayer, humanPlayer, null, null);
+      if (winner) {
+        if (winner === humanPlayer) {
+          console.log("\n🎉 You created three in a row! You win!");
+        } else {
+          console.log("\n💻 AI formed the line. Better luck next time!");
+        }
+      } else {
+        console.log("\n🤝 Draw. No line emerged.");
+      }
       break;
     }
 
     if (currentPlayer === humanPlayer) {
-      const { action, handoffToAi } = await handleHumanMove(state, humanPlayer, seenStates);
+      const { action, handoffToAi } = await selectMove(state, humanPlayer, seenStates);
       if (handoffToAi) {
-        const nextState = executeAiTurn(state, currentPlayer, seenStates);
-        const nextPlayer = getOpponent(currentPlayer);
+        const nextState = executeAiTurn(state, currentPlayer, humanPlayer, seenStates);
+        currentPlayer = getOpponent(currentPlayer);
         state = nextState;
-        currentPlayer = nextPlayer;
         addStateToHistory(seenStates, state, currentPlayer);
         continue;
       }
@@ -321,24 +513,11 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
       currentPlayer = action.nextPlayer;
       addStateToHistory(seenStates, state, currentPlayer);
     } else {
-      const nextState = executeAiTurn(state, currentPlayer, seenStates);
-      const nextPlayer = getOpponent(currentPlayer);
+      const nextState = executeAiTurn(state, currentPlayer, humanPlayer, seenStates);
+      currentPlayer = getOpponent(currentPlayer);
       state = nextState;
-      currentPlayer = nextPlayer;
       addStateToHistory(seenStates, state, currentPlayer);
     }
-  }
-
-  renderStatus(state, currentPlayer, humanPlayer);
-  const matchWinner = getWinner(state);
-  if (matchWinner) {
-    if (matchWinner === humanPlayer) {
-      console.log("\n🎉 You created three in a row in the active grid! You win.");
-    } else {
-      console.log("\n💻 AI formed the line. Try shifting smarter next time.");
-    }
-  } else {
-    console.log("\n🤝 It's a draw. The grid is full and no line emerged.");
   }
 
   const playAgain = await prompt("\nPlay again? (Y/n): ");
@@ -351,9 +530,7 @@ async function playHumanMatch(humanPlayer: Player): Promise<void> {
 
 async function runInteractiveMatch(): Promise<void> {
   const choice = await promptForPlayerChoice();
-  if (choice === "SELF_PLAY") {
-    return playSelfMatch();
-  }
+  if (choice === "SELF_PLAY") return playSelfMatch();
   return playHumanMatch(choice);
 }
 
@@ -365,21 +542,26 @@ const playSelfMatch = async (): Promise<void> => {
 
   while (true) {
     clearScreen();
-    console.log("Self-play mode (AI vs AI)\n");
+    console.log(`${BOLD}Self-play mode (AI vs AI)${RESET}`);
+    console.log();
     console.log(renderBoard(state));
     console.log(describeActiveGrid(state));
-    renderMoveHistory();
+
+    if (moveHistory.length) {
+      console.log();
+      console.log(renderMoveHistoryWindow(moveHistory, 0));
+    }
+
     console.log(`\nNext to move: ${currentPlayer}`);
 
     const winner = getWinner(state);
-    if (winner || isDraw(state)) {
-      break;
-    }
+    if (winner || isDraw(state)) break;
 
-    renderEngineEvaluation(state, currentPlayer, seenStates, `Player ${currentPlayer}`);
-    console.log("\nAI selecting move...");
+    console.log(`\n${BOLD}AI selecting move...${RESET}\n`);
+    renderProgressiveEval(state, currentPlayer, seenStates);
+
     const aiAction = chooseBestAction(state, currentPlayer, seenStates, engineDepth);
-    console.log(`${currentPlayer} executes ${describeAction(aiAction)}\n`);
+    console.log(`\n${currentPlayer} executes ${describeAction(aiAction)}`);
     state = applyAction(state, aiAction, currentPlayer);
     recordMove(currentPlayer, aiAction);
     currentPlayer = getOpponent(currentPlayer);
@@ -388,13 +570,13 @@ const playSelfMatch = async (): Promise<void> => {
   }
 
   clearScreen();
-  console.log("Self-play mode (AI vs AI) — match complete\n");
+  console.log(`${BOLD}Self-play mode — match complete${RESET}\n`);
   console.log(renderBoard(state));
   const matchWinner = getWinner(state);
   if (matchWinner) {
-    console.log(`Player ${matchWinner} wins the self-play match.`);
+    console.log(`Player ${matchWinner} wins.`);
   } else {
-    console.log("Self-play match ended in a draw.");
+    console.log("Draw.");
   }
   rl.close();
   process.exit(0);
