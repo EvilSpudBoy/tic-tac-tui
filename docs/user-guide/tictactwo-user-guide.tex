@@ -16,7 +16,7 @@
 \setlength{\headheight}{14pt}
 
 \title{TicTacTwo Terminal User Guide}
-\author{Project: \texttt{tic-tac-tui}}
+\author{Project: \texttt{tic-tac-two}}
 \date{February 7, 2026}
 
 \begin{document}
@@ -65,7 +65,7 @@ npm start
 \texttt{--eval=<name>} & Select evaluation plugin (for example: \texttt{default} or \texttt{positional}). \\
 \texttt{--list-evals} & Print available evaluation plugins and exit. \\
 \texttt{--self-play} & Start directly in AI vs AI mode. \\
-\texttt{--strict-repetition} & Disallow repetition by a matching board plus active-grid state. \\
+\texttt{--repetition-rule=strict} & Disallow repetition by a matching board plus active-grid state. \\
 \end{longtable}
 
 \section{Rules and Game Model}
@@ -80,13 +80,20 @@ npm start
 \begin{itemize}
 \item \textbf{Place}: put your marker on an empty cell inside the active grid.
 \item \textbf{Move}: reposition one of your existing markers to another empty cell in the active grid.
-\item \textbf{Shift}: move the active 3x3 grid one step up, down, left, or right (when legal).
+\item \textbf{Shift}: move the active 3x3 grid one step in any of the eight directions (up, down, left, right, or diagonally) when legal.
+\end{itemize}
+
+\subsection{Piece limits and movement requirements}
+\begin{itemize}
+\item Each player has exactly four markers total.
+\item After placing all four pieces, you must move an existing marker rather than placing new ones.
+\item Shifting or moving pieces only becomes legal after placing at least two markers.
 \end{itemize}
 
 \subsection{Repetition handling}
 \begin{itemize}
 \item Default mode avoids immediate move-level backtracking loops.
-\item \texttt{--strict-repetition} enforces no repeated full game state, including grid location.
+\item \texttt{--repetition-rule=strict} enforces no repeated full game state, including grid location.
 \end{itemize}
 
 \section{Walkthrough 1: Start a Match and Make a Move}
@@ -140,7 +147,7 @@ After mode selection, the screen shows:
 \section{Walkthrough 3: Observe Self-Play and Grid Shift}
 Launch self-play directly:
 \begin{verbatim}
-npm start -- --self-play --engine-depth=2 --multi-pv=2
+npm run play -- --self-play --engine-depth=2 --multi-pv=2
 \end{verbatim}
 
 In this mode, the AI alternates moves automatically. This is useful for:
@@ -161,7 +168,7 @@ The capture below shows a sequence where O executes \texttt{shift left}, which r
 \section{Walkthrough 4: Discover and Select Evaluation Plugins}
 List available evaluation plugins:
 \begin{verbatim}
-npm start -- --list-evals
+npm run play -- --list-evals
 \end{verbatim}
 
 Current built-in plugins:
@@ -172,7 +179,7 @@ Current built-in plugins:
 
 Start with a specific plugin:
 \begin{verbatim}
-npm start -- --eval=positional --engine-depth=7 --multi-pv=4
+npm run play -- --eval=positional --engine-depth=7 --multi-pv=4
 \end{verbatim}
 
 \begin{center}
@@ -210,7 +217,7 @@ npm start -- --eval=positional --engine-depth=7 --multi-pv=4
 \begin{verbatim}
 npm run build
 npm test
-npm run test:coverage
+npm run coverage
 \end{verbatim}
 
 \subsection{Quality notes}
@@ -223,21 +230,21 @@ npm run test:coverage
 \begin{itemize}
 \item If terminal rendering looks off, resize the terminal and relaunch.
 \item If keys are not recognized, confirm focus is in the terminal window.
-\item For strict anti-loop behavior, add \texttt{--strict-repetition}.
+\item For strict anti-loop behavior, add \texttt{--repetition-rule=strict}.
 \item Use lower depth values if AI turns feel slow on your machine.
 \end{itemize}
 
 \section{Quick Command Cheat Sheet}
 \begin{verbatim}
-npm start
-npm start -- --self-play
-npm start -- --engine-depth=8 --multi-pv=4
-npm start -- --eval=positional
-npm start -- --list-evals
-npm start -- --strict-repetition
+npm run play
+npm run play -- --self-play
+npm run play -- --engine-depth=8 --multi-pv=4
+npm run play -- --eval=positional
+npm run play -- --list-evals
+npm run play -- --repetition-rule=strict
 \end{verbatim}
 
 \vfill
-\noindent\textit{Generated for the tic-tac-tui repository.}
+\noindent\textit{Generated for the tic-tac-two repository.}
 
 \end{document}
