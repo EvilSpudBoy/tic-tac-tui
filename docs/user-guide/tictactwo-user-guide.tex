@@ -1,0 +1,243 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{TicTacTwo User Guide}
+\rhead{\thepage}
+\setlength{\headheight}{14pt}
+
+\title{TicTacTwo Terminal User Guide}
+\author{Project: \texttt{tic-tac-tui}}
+\date{February 7, 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Overview}
+TicTacTwo is a terminal-based strategy game inspired by Tic-Tac-Toe, but played on a 5x5 board with a movable active 3x3 grid. You can play human versus AI, AI versus AI, and switch control between human and AI during a match.
+
+\subsection{Core Features}
+\begin{itemize}
+\item Three startup modes: play as X, play as O, or watch self-play (computer vs computer).
+\item Legal move types: \texttt{place}, \texttt{move}, and \texttt{shift}.
+\item AI powered by minimax with alpha-beta pruning.
+\item Real-time engine analysis panel with principal variations.
+\item Scrollable move history with keyboard navigation.
+\item Pluggable evaluation functions (default and positional included).
+\item Optional strict repetition rule for no-repeat states.
+\item Interactive command system during gameplay (\texttt{ai}, \texttt{restart}, \texttt{quit}, and more).
+\end{itemize}
+
+\section{Install and Run}
+\subsection{Requirements}
+\begin{itemize}
+\item Node.js 20+
+\item npm
+\end{itemize}
+
+\subsection{Install and start}
+\begin{enumerate}
+\item Install dependencies:
+\begin{verbatim}
+npm install
+\end{verbatim}
+\item Start the TUI:
+\begin{verbatim}
+npm start
+\end{verbatim}
+\end{enumerate}
+
+\subsection{Useful launch options}
+\begin{longtable}{p{0.36\textwidth}p{0.58\textwidth}}
+\texttt{--engine-depth=<n>} & Search depth for AI move selection (default: 6). \\
+\texttt{--multi-pv=<n>} & Number of PV lines shown in analysis panel (default: 3). \\
+\texttt{--eval=<name>} & Select evaluation plugin (for example: \texttt{default} or \texttt{positional}). \\
+\texttt{--list-evals} & Print available evaluation plugins and exit. \\
+\texttt{--self-play} & Start directly in AI vs AI mode. \\
+\texttt{--strict-repetition} & Disallow repetition by a matching board plus active-grid state. \\
+\end{longtable}
+
+\section{Rules and Game Model}
+\subsection{Board and objective}
+\begin{itemize}
+\item The full board is 5x5.
+\item Only the active 3x3 window is playable for placement and movement.
+\item Win by forming a three-in-a-row for your symbol in the current position.
+\end{itemize}
+
+\subsection{Move types}
+\begin{itemize}
+\item \textbf{Place}: put your marker on an empty cell inside the active grid.
+\item \textbf{Move}: reposition one of your existing markers to another empty cell in the active grid.
+\item \textbf{Shift}: move the active 3x3 grid one step up, down, left, or right (when legal).
+\end{itemize}
+
+\subsection{Repetition handling}
+\begin{itemize}
+\item Default mode avoids immediate move-level backtracking loops.
+\item \texttt{--strict-repetition} enforces no repeated full game state, including grid location.
+\end{itemize}
+
+\section{Walkthrough 1: Start a Match and Make a Move}
+When the app starts, choose your mode:
+\begin{itemize}
+\item \texttt{X}: you move first.
+\item \texttt{O}: AI moves first, then you respond.
+\item \texttt{C}: self-play mode.
+\end{itemize}
+
+After mode selection, the screen shows:
+\begin{itemize}
+\item Current board and highlighted active grid.
+\item Engine panel with depth, node count, and top PV lines.
+\item Move selector with legal moves and a filter prompt.
+\end{itemize}
+
+\begin{center}
+\includegraphics[width=\textwidth]{docs/user-guide/screens/01_startup.png}
+
+\small Figure 1: Startup prompt, board rendering, engine panel, and move selector.
+\end{center}
+
+\section{Walkthrough 2: Use Keyboard Controls During Play}
+\subsection{Move selector controls}
+\begin{itemize}
+\item \texttt{Tab}, \texttt{Up}, \texttt{Down}: cycle through legal moves.
+\item Type any text: filter candidate move list.
+\item \texttt{Enter}: confirm the currently selected move.
+\end{itemize}
+
+\subsection{History controls}
+\begin{itemize}
+\item \texttt{PgUp} and \texttt{PgDn}: scroll move history.
+\item The history panel updates after each move and shows the latest sequence.
+\end{itemize}
+
+\subsection{Command shortcuts}
+\begin{itemize}
+\item \texttt{ai} or \texttt{auto}: let AI take the current turn.
+\item \texttt{restart} or \texttt{r}: restart the match.
+\item \texttt{exit}, \texttt{quit}, or \texttt{q}: leave the app.
+\end{itemize}
+
+\begin{center}
+\includegraphics[width=\textwidth]{docs/user-guide/screens/04_controls.png}
+
+\small Figure 2: Interactive controls and command shortcuts available in the TUI.
+\end{center}
+
+\section{Walkthrough 3: Observe Self-Play and Grid Shift}
+Launch self-play directly:
+\begin{verbatim}
+npm start -- --self-play --engine-depth=2 --multi-pv=2
+\end{verbatim}
+
+In this mode, the AI alternates moves automatically. This is useful for:
+\begin{itemize}
+\item Understanding strategy and shift timing.
+\item Watching how the active grid changes move legality.
+\item Comparing engine lines in real time.
+\end{itemize}
+
+The capture below shows a sequence where O executes \texttt{shift left}, which relocates the active grid and changes future legal moves.
+
+\begin{center}
+\includegraphics[width=0.92\textwidth]{docs/user-guide/screens/03_selfplay.png}
+
+\small Figure 3: Self-play with engine analysis, history, and an active-grid shift event.
+\end{center}
+
+\section{Walkthrough 4: Discover and Select Evaluation Plugins}
+List available evaluation plugins:
+\begin{verbatim}
+npm start -- --list-evals
+\end{verbatim}
+
+Current built-in plugins:
+\begin{itemize}
+\item \texttt{default}: terminal-only scoring (wins, losses, draws).
+\item \texttt{positional}: adds heuristics for threats, center influence, and active-grid presence.
+\end{itemize}
+
+Start with a specific plugin:
+\begin{verbatim}
+npm start -- --eval=positional --engine-depth=7 --multi-pv=4
+\end{verbatim}
+
+\begin{center}
+\includegraphics[width=\textwidth]{docs/user-guide/screens/02_plugins.png}
+
+\small Figure 4: Evaluation plugin listing output.
+\end{center}
+
+\section{Feature-by-Feature Reference}
+\subsection{Gameplay and interaction}
+\begin{itemize}
+\item Human vs AI and AI vs AI modes.
+\item Type-ahead filtering for move commands.
+\item Immediate command entry without leaving the move prompt.
+\item Restart flow that preserves runtime settings.
+\end{itemize}
+
+\subsection{Engine and analysis}
+\begin{itemize}
+\item Minimax plus alpha-beta pruning.
+\item Configurable search depth and Multi-PV count.
+\item Per-turn analysis details: nodes, TT hits, cutoffs.
+\item Principal variation preview for top candidate lines.
+\end{itemize}
+
+\subsection{Extensibility}
+\begin{itemize}
+\item Plugin registry for custom evaluation strategies.
+\item CLI selection by plugin id (\texttt{--eval=<id>}).
+\item Discovery endpoint via \texttt{--list-evals}.
+\end{itemize}
+
+\section{Development and Testing}
+\subsection{Build and test commands}
+\begin{verbatim}
+npm run build
+npm test
+npm run test:coverage
+\end{verbatim}
+
+\subsection{Quality notes}
+\begin{itemize}
+\item The project includes unit tests for core game logic, AI behavior, CLI parsing, and TUI integration paths.
+\item Coverage reports are generated under \texttt{coverage/}.
+\end{itemize}
+
+\section{Troubleshooting}
+\begin{itemize}
+\item If terminal rendering looks off, resize the terminal and relaunch.
+\item If keys are not recognized, confirm focus is in the terminal window.
+\item For strict anti-loop behavior, add \texttt{--strict-repetition}.
+\item Use lower depth values if AI turns feel slow on your machine.
+\end{itemize}
+
+\section{Quick Command Cheat Sheet}
+\begin{verbatim}
+npm start
+npm start -- --self-play
+npm start -- --engine-depth=8 --multi-pv=4
+npm start -- --eval=positional
+npm start -- --list-evals
+npm start -- --strict-repetition
+\end{verbatim}
+
+\vfill
+\noindent\textit{Generated for the tic-tac-tui repository.}
+
+\end{document}
