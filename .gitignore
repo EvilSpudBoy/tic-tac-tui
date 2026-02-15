@@ -5,3 +5,10 @@ dist/
 .env.*
 *.tgz
 .DS_Store
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+docs/user-guide/*.pdf
